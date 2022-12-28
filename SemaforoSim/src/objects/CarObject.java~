@@ -1,0 +1,301 @@
+package objects;
+
+import gui.EnvironmentPanel;
+
+import jade.core.AID;
+
+import java.awt.Color;
+import java.awt.Graphics;
+import java.awt.Image;
+import java.io.File;
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.util.Random;
+import objects.SemaphoreObject.SemaphoreSignal;
+
+import javax.imageio.ImageIO;
+
+import utils.ImageToolKitX;
+
+public class CarObject {
+
+	AID identifier;
+	
+	public enum CarBehavior {
+		JUST_GO, // Ignore the red sign (INITIAL ACTION)
+		STOP_BEFORE_ZEBRA_CROSSING, // (INITIAL ACTION)
+		STOP_ON_ZEBRA_CROSSING,  // (INITIAL ACTION)
+		CONTINUE_TO_GO, // (INTERMEDIATE ACTION) 
+		STEP_BACK  //  (INTERMEDIATE ACTION)   
+		};
+	public enum CarStatus {NO_CAR, 
+		CAR_MOVING_WITHOUT_PROBLEM, 
+		CAR_STOPPED_ON_ZEBRA_CROSSING, 
+		CAR_PASSED_RED_SEMAPHORE, 
+		CAR_STOPPED_BEFORE_ZEBRA_CROSSING,
+		KNOWN_VIOLATOR
+		};
+	enum FaixaType {UP_FAIXA, DOWN_FAIXA};
+	
+	
+	int pos_before_zebra_crossing = 90;
+	int pos_on_zebra_crossing = 120;
+	
+	int current_posx;
+	int current_posy;
+	int velocity;
+	
+	FaixaType faixaUsed;
+	Image carImage;
+	
+	EnvironmentPanel p;
+	
+	CarStatus currentStatus;
+	CarBehavior carBehavior;
+	
+	boolean always_running = false;
+	
+	// About the Step Back Action
+	private boolean stepBackMode = false;
+	private int stepBackTime = 0;
+	
+	final int totalFileCars = 4;
+	
+	public CarObject(EnvironmentPanel p, CarBehavior carBehavior) {
+		this.p = p;
+		this.carBehavior = carBehavior;
+		Random random = new Random();
+		
+		// Escolhendo em qual faixa o carro ira passar
+		if (random.nextInt(100) > 70)
+			faixaUsed = FaixaType.DOWN_FAIXA;
+		else faixaUsed = FaixaType.UP_FAIXA;
+		
+		// Escolhendo a Imagem do carro
+		/*int type_car = random.nextInt(100);
+		int index = 0;
+		if (type_car < 20)
+			index = 0;
+		else if (type_car < 50)
+			index = 1;
+		else index = 2;*/
+		int index = random.nextInt(totalFileCars);
+		File carFiles[] = new File[totalFileCars];
+		carFiles[0] = new File("images/car-01.png");
+		carFiles[1] = new File("images/limousine.png");
+		carFiles[2] = new File("images/car-02.png");
+		carFiles[3] = new File("images/car-03.png");
+		try {
+				carImage = ImageIO.read(carFiles[index]);
+				carImage = ImageToolKitX.makeColorTransparent(carImage, new Color(170,170,170));
+			
+		} catch (MalformedURLException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		// Escolhendo a velocidade
+		this.velocity = random.nextInt(10) + 1;
+		currentStatus = CarStatus.CAR_MOVING_WITHOUT_PROBLEM;
+	}
+	
+	public CarObject(EnvironmentPanel p, AID id) {
+		Random random = new Random();
+		
+		this.identifier = id;
+		this.p = p;
+		
+		// Escolhendo em qual faixa o carro ira passar
+		if (random.nextInt(100) > 30)
+			faixaUsed = FaixaType.DOWN_FAIXA;
+		else faixaUsed = FaixaType.UP_FAIXA;
+		
+		// Escolhendo a Imagem do carro
+		int type_car = random.nextInt(100);
+		int index = 0;
+		if (type_car < 20)
+			index = 0;
+		else if (type_car < 50)
+			index = 1;
+		else index = 2;
+		File carFiles[] = new File[3];
+		carFiles[0] = new File("images/police-car.png");
+		carFiles[1] = new File("images/limousine.png");
+		carFiles[2] = new File("images/car-02.png");
+		try {
+				carImage = ImageIO.read(carFiles[index]);
+				carImage = ImageToolKitX.makeColorTransparent(carImage, new Color(170,170,170));
+			
+		} catch (MalformedURLException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		// Escolhendo a velocidade
+		this.velocity = random.nextInt(4) + 3;
+		
+		
+		// Escolhendo o comportamento
+		if (p.getCurrentSemaphoreSignal() == SemaphoreSignal.GREEN)
+			carBehavior = CarBehavior.JUST_GO;
+		else {
+			int type_behavior = random.nextInt(100);
+			if (type_behavior < 40)
+				carBehavior = CarBehavior.JUST_GO;
+			else if (type_behavior < 50)
+				carBehavior = CarBehavior.STOP_BEFORE_ZEBRA_CROSSING;
+			else carBehavior = CarBehavior.STOP_ON_ZEBRA_CROSSING;
+		}
+		
+		currentStatus = CarStatus.CAR_MOVING_WITHOUT_PROBLEM;
+		current_posy = getPosYCar(current_posy);
+
+		if (faixaUsed == FaixaType.DOWN_FAIXA) {
+			pos_before_zebra_crossing = 70;
+			pos_on_zebra_crossing = 100;
+		}
+
+	}
+	
+	/**
+	 * Method about drawing a car object in an Environment
+	 * @param g
+	 * @param semaphore_posx
+	 * @param semaphore_posy
+	 */
+	public void draw(Graphics g, int semaphore_posx, int semaphore_posy ) {
+		g.drawImage(carImage, current_posx, current_posy , p);
+		
+		int distance2semaphore = pos_before_zebra_crossing - current_posx;
+		int distanceUntilsemaphore = pos_on_zebra_crossing - current_posx;
+		
+		// Perform the Step Back Action
+		if (stepBackMode && stepBackTime > 0) {
+			current_posx = (current_posx - velocity) % p.getWidth();
+			current_posy = getPosYCar(current_posx);
+			stepBackTime--;
+			System.out.println("STEP BACK Action");
+		}
+		else if (carBehavior == CarBehavior.STOP_BEFORE_ZEBRA_CROSSING && 
+				p.getCurrentSemaphoreSignal() == SemaphoreSignal.RED && 
+				distance2semaphore < 10) {
+			System.out.println("Carro parou antes da faixa");
+			currentStatus = CarStatus.CAR_STOPPED_ON_ZEBRA_CROSSING;
+		}
+		else if (carBehavior == CarBehavior.STOP_ON_ZEBRA_CROSSING && 
+				p.getCurrentSemaphoreSignal() == SemaphoreSignal.RED && 
+				distanceUntilsemaphore < 10) {
+			System.out.println("Carro parou na faixa");
+			currentStatus = CarStatus.CAR_STOPPED_ON_ZEBRA_CROSSING;
+		}
+		else {
+			stepBackMode = false;
+			
+			// Verifica se passou no sinal vermelho
+			if (p.getCurrentSemaphoreSignal() == SemaphoreSignal.RED 
+					&& distanceUntilsemaphore < -10 && distanceUntilsemaphore > -50) {
+				currentStatus = CarStatus.CAR_PASSED_RED_SEMAPHORE;
+				System.out.println("Carro passou no sinal vermelho");
+			}
+			else currentStatus = CarStatus.CAR_MOVING_WITHOUT_PROBLEM;
+			
+			if (always_running)
+				current_posx = (current_posx + velocity) % p.getWidth();
+			else {
+				current_posx = current_posx + velocity;
+				if (current_posx > (p.getWidth() - 30))
+					p.removeCar();
+			}
+			
+			current_posy = getPosYCar(current_posx);
+		}
+	}
+	
+	private int getPosYCar(int posx) {
+		if (faixaUsed == FaixaType.UP_FAIXA)
+			return (int)((double)((double)280.0/560.0) * posx + 50);
+		if (faixaUsed == FaixaType.DOWN_FAIXA)
+			return (int)((double)((double)280.0/560.0) * posx + 100);
+		return 0;
+	}
+
+	public boolean isAlways_running() {
+		return always_running;
+	}
+
+	public void setAlways_running(boolean always_running) {
+		this.always_running = always_running;
+	}
+
+	public int getPosX() {
+		return current_posx;
+	}
+
+	public void setPosX(int current_posx) {
+		this.current_posx = current_posx;
+	}
+
+	public int getPosY() {
+		return current_posy;
+	}
+
+	public void setPosY(int current_posy) {
+		this.current_posy = current_posy;
+	}
+
+	public int getVelocity() {
+		return velocity;
+	}
+
+	public void setVelocity(int velocity) {
+		this.velocity = velocity;
+	}
+
+	public FaixaType getFaixaUsed() {
+		return faixaUsed;
+	}
+
+	public void setFaixaUsed(FaixaType faixaUsed) {
+		this.faixaUsed = faixaUsed;
+	}
+
+	public CarStatus getCurrentStatus() {
+		return currentStatus;
+	}
+
+	public void setCurrentStatus(CarStatus currentStatus) {
+		this.currentStatus = currentStatus;
+	}
+
+	public CarBehavior getCarBehavior() {
+		return carBehavior;
+	}
+
+	public void setCarBehavior(CarBehavior carBehavior) {
+		this.carBehavior = carBehavior;
+	}
+
+	public void stepBack() {
+		stepBackMode = true;
+		stepBackTime = 10;	
+		carBehavior = CarBehavior.STOP_BEFORE_ZEBRA_CROSSING;
+	}
+
+	public AID getIdentifier() {
+		return identifier;
+	}
+
+	public void setIdentifier(AID identifier) {
+		this.identifier = identifier;
+	}
+	
+	
+	
+	
+}
